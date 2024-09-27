@@ -4,6 +4,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.naturalSorted
+import com.intellij.openapi.util.IconLoader
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.CollectionComboBoxModel
@@ -16,12 +17,14 @@ import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.dsl.gridLayout.HorizontalAlign
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import com.jetbrains.rd.util.getOrCreate
 import kotlinx.datetime.TimeZone
 import lance.tool.DateTool
 import lance.tool.SystemTool
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import javax.swing.Icon
 import javax.swing.JPanel
 import javax.swing.JScrollPane
 import javax.swing.ScrollPaneConstants
@@ -45,6 +48,13 @@ class CustomToolWindowFactory : ToolWindowFactory {
 
         val content = ContentFactory.SERVICE.getInstance().createContent(splitterPanel, null, false)
         toolWindow.contentManager.addContent(content)
+    }
+
+    override fun getIcon(): Icon {
+        if (UIUtil.isUnderDarcula()) {
+            return IconLoader.getIcon("icon/icon.png", javaClass.classLoader)
+        }
+        return IconLoader.getIcon("icon/icon_dark.png", javaClass.classLoader)
     }
 
     private fun getMenuPanel(menu: String): JScrollPane {
@@ -79,6 +89,9 @@ class CustomToolWindowFactory : ToolWindowFactory {
                 }
             })
         }
+
+        menuList.setSelectedValue("时间戳转换", true)
+
         val scrollPane = ScrollPaneFactory.createScrollPane(menuList, true).apply {
             horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
             border = JBUI.Borders.empty(0, 10)
