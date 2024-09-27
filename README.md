@@ -1,3 +1,13 @@
 # Intellij实用小工具
 
-致力于打造实用的 Intellij 小工具。
+<!-- Plugin description -->
+
+Simple Tools For Intellij.
+
+- timestamp and datetime convert
+
+Supported versions:
+
+- Version: 2022.1 and above
+
+<!-- Plugin description end -->
