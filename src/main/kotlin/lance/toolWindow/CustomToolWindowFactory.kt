@@ -1,26 +1,30 @@
 package lance.toolWindow
 
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
+import com.intellij.openapi.ui.DialogPanel
+import com.intellij.openapi.ui.naturalSorted
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
-import com.intellij.openapi.wm.impl.welcomeScreen.WelcomeScreenUIManager
+import com.intellij.ui.CollectionComboBoxModel
 import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.SearchTextField
+import com.intellij.ui.components.JBList
+import com.intellij.ui.components.JBTextField
 import com.intellij.ui.content.ContentFactory
-import com.intellij.ui.dsl.builder.RightGap
-import com.intellij.ui.dsl.builder.RowLayout
-import com.intellij.ui.dsl.builder.panel
-import com.intellij.ui.treeStructure.SimpleTree
+import com.intellij.ui.dsl.builder.*
+import com.intellij.ui.dsl.gridLayout.HorizontalAlign
 import com.intellij.util.ui.JBUI
+import com.jetbrains.rd.util.getOrCreate
+import kotlinx.datetime.TimeZone
+import lance.tool.DateTool
+import lance.tool.SystemTool
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import javax.swing.BoxLayout
 import javax.swing.JPanel
-import javax.swing.JTree
+import javax.swing.JScrollPane
 import javax.swing.ScrollPaneConstants
-import javax.swing.tree.DefaultMutableTreeNode
-import javax.swing.tree.DefaultTreeModel
 
 /**
  * @author WuQinglong
@@ -28,105 +32,110 @@ import javax.swing.tree.DefaultTreeModel
  */
 class CustomToolWindowFactory : ToolWindowFactory {
 
+    private val second = "Second"
+    private val millisecond = "Millisecond"
+    private val availableZoneIds = TimeZone.availableZoneIds.toList().naturalSorted()
+    private val dateTool = DateTool()
+    private val panelCache = mutableMapOf<String, JScrollPane>()
     private val splitterPanel = OnePixelSplitter(false, 0.2f)
-    private val timestampPanel by lazy {
-        ScrollPaneFactory.createScrollPane(createTimestampPanel(), true).apply {
-            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
-        }
-    }
-    private val cronPanel by lazy {
-        ScrollPaneFactory.createScrollPane(createCronPanel(), true).apply {
-            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
-        }
-    }
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        val panel = createPanel()
-        val content = ContentFactory.SERVICE.getInstance().createContent(panel, null, false)
+        splitterPanel.firstComponent = createLeftPanel()
+        splitterPanel.secondComponent = panelCache.getOrCreate("时间戳转换") { k -> getMenuPanel(k) }
+
+        val content = ContentFactory.SERVICE.getInstance().createContent(splitterPanel, null, false)
         toolWindow.contentManager.addContent(content)
     }
 
-    private fun createPanel(): JPanel {
-        val leftPanel = createLeftPanel()
-
-        splitterPanel.firstComponent = leftPanel
-        splitterPanel.secondComponent = timestampPanel
-
-        return splitterPanel
+    private fun getMenuPanel(menu: String): JScrollPane {
+        var panel: DialogPanel = when (menu) {
+            "时间戳转换" -> createTimestampPanel()
+            "Cron表达式" -> createCronPanel()
+            else -> DialogPanel()
+        }
+        return ScrollPaneFactory.createScrollPane(panel, true).apply {
+            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+        }
     }
 
     private fun createLeftPanel(): JPanel {
         // 搜索框
-        val searchTextField = SearchTextField(false).apply {
-            border = JBUI.Borders.customLineBottom(WelcomeScreenUIManager.getSeparatorColor())
-            isEnabled = false
-        }
+        val searchTextField = SearchTextField(false)
 
         // 菜单
-        val scrollPane = ScrollPaneFactory.createScrollPane(createMenuTree(), true).apply {
-            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
-        }
-
-        return JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            background = WelcomeScreenUIManager.getProjectsBackground()
-            isFocusTraversalPolicyProvider = true
-            isFocusCycleRoot = true
-
-//            add(searchTextField)
-            add(scrollPane)
-        }
-    }
-
-    private fun createMenuTree(): JTree {
-        val timestamp = DefaultMutableTreeNode("时间戳转换")
-        val cron = DefaultMutableTreeNode("Cron表达式")
-
-        val root = DefaultMutableTreeNode("VirtualRoot").apply {
-            add(timestamp)
-            add(cron)
-        }
-
-        return SimpleTree(DefaultTreeModel(root)).apply {
-            isRootVisible = false
+        val menuList = JBList("时间戳转换").apply {
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
                     if (e.clickCount != 2) {
                         return
                     }
-
-                    val selectionModel = (e.source as SimpleTree).selectionModel
-                    val lastPathComponent = selectionModel.selectionPath?.lastPathComponent ?: return
-
-                    val userObject = (lastPathComponent as DefaultMutableTreeNode).userObject
-                    if (userObject == "时间戳转换") {
-                        splitterPanel.secondComponent = timestampPanel
-                    } else if (userObject == "Cron表达式") {
-                        splitterPanel.secondComponent = cronPanel
+                    val value = (e.source as JBList<*>).selectedValue as String
+                    val panel = panelCache.getOrCreate(value) { k -> getMenuPanel(k) }
+                    if (panel === splitterPanel.secondComponent) {
+                        return
                     }
+                    splitterPanel.secondComponent = panelCache.getOrCreate(value) { k -> getMenuPanel(k) }
                     splitterPanel.updateUI()
                 }
             })
         }
+        val scrollPane = ScrollPaneFactory.createScrollPane(menuList, true).apply {
+            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+            border = JBUI.Borders.empty()
+        }
+
+        return panel {
+            row {
+                cell(searchTextField)
+                    .horizontalAlign(HorizontalAlign.FILL)
+                    .enabled(false)
+            }
+            separator()
+            row {
+                cell(scrollPane)
+                    .horizontalAlign(HorizontalAlign.FILL)
+            }
+        }
     }
 
-    private fun createTimestampPanel(): JPanel {
-        println("createTimestampPanel")
+    private fun createTimestampPanel(): DialogPanel {
+        val currentField = JBTextField()
+        val timestampField = JBTextField()
+        val timestampResultField = JBTextField()
+        val datetimeField = JBTextField()
+        val datetimeSecondField = JBTextField()
+        val datetimeMillisecondField = JBTextField()
+
+        val timeComboBox = ComboBox(CollectionComboBoxModel(listOf(millisecond, second)))
+        val availableZoneIdsComboBox1 = ComboBox(CollectionComboBoxModel(availableZoneIds))
+        val availableZoneIdsComboBox2 = ComboBox(CollectionComboBoxModel(availableZoneIds))
+
+        availableZoneIdsComboBox1.selectedItem = TimeZone.currentSystemDefault().id
+        availableZoneIdsComboBox2.selectedItem = TimeZone.currentSystemDefault().id
+
         return panel {
             group("Current timestamp") {
                 row {
-                    textField()
+                    cell(currentField)
                         .gap(RightGap.SMALL)
                         .enabled(false)
-                    comboBox(listOf("Second", "Millisecond"))
+                        .columns(COLUMNS_SHORT)
+                        .text(System.currentTimeMillis().toString())
+                    cell(timeComboBox)
                 }
 
                 row {
                     button("Refresh") {
-                        println("Click Refresh Button")
+                        var value = System.currentTimeMillis().toString()
+                        val format = timeComboBox.selectedItem as String
+                        if (format == second) {
+                            value = value.substring(0, value.length - 3)
+                        }
+                        currentField.text = value
+                        currentField.repaint()
                     }
                     button("Copy") {
-                        println("Click Copy Button")
+                        SystemTool.setPaste(currentField.text)
                     }
                 }
             }
@@ -134,21 +143,28 @@ class CustomToolWindowFactory : ToolWindowFactory {
             groupRowsRange("Timestamp To Datetime") {
                 row {
                     label("Timestamp:")
-                    textField()
+                    cell(timestampField)
                         .gap(RightGap.SMALL)
-                    comboBox(listOf("Second", "Millisecond"))
-                    comboBox(listOf("ShangHai", "Beijing"))
+                        .columns(COLUMNS_SHORT)
+                    cell(availableZoneIdsComboBox1)
                 }.layout(RowLayout.PARENT_GRID)
 
                 row {
                     label("Result:")
-                    textField()
+                    cell(timestampResultField)
+                        .columns(COLUMNS_SHORT)
+                    button("Copy") {
+                        SystemTool.setPaste(timestampResultField.text)
+                    }
                 }.layout(RowLayout.PARENT_GRID)
 
                 row {
                     label("")
                     button("Convert") {
-                        println("Click Convert Button")
+                        val timestamp = timestampField.text
+                        val zoneId = availableZoneIdsComboBox1.selectedItem as String
+                        timestampResultField.text = dateTool.timestampToDateTime(timestamp, zoneId)
+                        timestampResultField.repaint()
                     }
                 }.layout(RowLayout.PARENT_GRID)
             }
@@ -156,35 +172,65 @@ class CustomToolWindowFactory : ToolWindowFactory {
             groupRowsRange("Datetime To Timestamp") {
                 row {
                     label("Datetime:")
-                    textField()
+                    cell(datetimeField)
                         .gap(RightGap.SMALL)
-                    comboBox(listOf("Second", "Millisecond"))
-                    comboBox(listOf("ShangHai", "Beijing"))
+                        .columns(COLUMNS_SHORT)
+                    cell(availableZoneIdsComboBox2)
                 }.layout(RowLayout.PARENT_GRID)
 
                 row {
                     label("Result:")
-                    textField()
+                    cell(datetimeSecondField)
+                        .gap(RightGap.SMALL)
+                        .columns(COLUMNS_SHORT)
+                    label("Second")
+                    button("Copy") {
+                        SystemTool.setPaste(datetimeSecondField.text)
+                    }
+                }.layout(RowLayout.PARENT_GRID)
+
+                row {
+                    label("")
+                    cell(datetimeMillisecondField)
+                        .gap(RightGap.SMALL)
+                        .columns(COLUMNS_SHORT)
+                    label("Millisecond")
+                    button("Copy") {
+                        SystemTool.setPaste(datetimeMillisecondField.text)
+                    }
                 }.layout(RowLayout.PARENT_GRID)
 
                 row {
                     label("")
                     button("Convert") {
-                        println("Click Convert Button")
+                        val datetime = datetimeField.text
+                        val zoneId = availableZoneIdsComboBox2.selectedItem as String
+                        val pair = dateTool.dateTimeToTimestamp(datetime, zoneId)
+                        datetimeSecondField.text = pair.first
+                        datetimeMillisecondField.text = pair.second
+                        datetimeSecondField.repaint()
+                        datetimeMillisecondField.repaint()
                     }
                 }.layout(RowLayout.PARENT_GRID)
-
             }
 
         }.withBorder(JBUI.Borders.empty(10))
     }
 
-    private fun createCronPanel(): JPanel {
-        println("createCronPanel")
+    private fun createCronPanel(): DialogPanel {
         return panel {
-            row {
-                textField()
-                    .label("Cron")
+            group("Cron Expression") {
+                row {
+                    label("Cron")
+                    textField()
+                    button("Click") {
+
+                    }
+                }
+
+                row {
+                    label("Next at:")
+                }
             }
         }.withBorder(JBUI.Borders.empty(10))
     }
