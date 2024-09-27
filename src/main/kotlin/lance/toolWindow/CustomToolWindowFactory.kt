@@ -81,7 +81,7 @@ class CustomToolWindowFactory : ToolWindowFactory {
         }
         val scrollPane = ScrollPaneFactory.createScrollPane(menuList, true).apply {
             horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
-            border = JBUI.Borders.empty()
+            border = JBUI.Borders.empty(0, 10)
         }
 
         return panel {
@@ -90,7 +90,6 @@ class CustomToolWindowFactory : ToolWindowFactory {
                     .horizontalAlign(HorizontalAlign.FILL)
                     .enabled(false)
             }
-            separator()
             row {
                 cell(scrollPane)
                     .horizontalAlign(HorizontalAlign.FILL)
